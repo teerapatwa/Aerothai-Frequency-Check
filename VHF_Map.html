@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="VHF Map">
+<meta name="theme-color" content="#1F4E79">
+<title>Thailand VHF Map</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+* { box-sizing:border-box; margin:0; padding:0; }
+body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; background:#f0f4f8; overflow:hidden; }
+
+#map { width:100vw; height:100vh; }
+
+/* Search panel */
+#panel {
+  position:fixed; top:0; left:0; right:0; z-index:1000;
+  background:linear-gradient(135deg,#1F4E79,#2E75B6);
+  padding:10px 12px 10px;
+  box-shadow:0 2px 12px rgba(0,0,0,0.25);
+}
+#panel h1 { color:white; font-size:15px; font-weight:700; margin-bottom:8px; letter-spacing:0.3px; }
+.search-row { display:flex; gap:8px; }
+#inp {
+  flex:1; font-size:20px; font-weight:700;
+  padding:9px 14px; border:none; border-radius:10px;
+  outline:none; color:#1F4E79; letter-spacing:1px;
+  -webkit-appearance:none;
+}
+#search-btn {
+  background:white; border:none; border-radius:10px;
+  padding:0 16px; font-size:14px; font-weight:700; color:#1F4E79;
+  cursor:pointer; white-space:nowrap;
+}
+#clear-btn {
+  background:rgba(255,255,255,0.2); border:none; border-radius:10px;
+  padding:0 12px; font-size:16px; color:white; cursor:pointer;
+}
+
+/* Result banner */
+#banner {
+  position:fixed; bottom:0; left:0; right:0; z-index:1000;
+  background:white;
+  border-radius:18px 18px 0 0;
+  box-shadow:0 -4px 20px rgba(0,0,0,0.15);
+  max-height:55vh;
+  overflow-y:auto;
+  transform:translateY(100%);
+  transition:transform 0.3s ease;
+  padding:0 0 env(safe-area-inset-bottom,0);
+}
+#banner.open { transform:translateY(0); }
+#banner-handle {
+  text-align:center; padding:10px;
+  cursor:pointer;
+}
+#banner-handle span {
+  display:inline-block; width:36px; height:4px;
+  background:#ddd; border-radius:2px;
+}
+#banner-content { padding:0 16px 20px; }
+.banner-title { font-size:14px; font-weight:700; color:#1F4E79; margin-bottom:12px; }
+
+.freq-card {
+  display:flex; align-items:center; gap:10px;
+  padding:10px 12px; border-radius:12px;
+  margin-bottom:8px;
+  border:1px solid #eee;
+  background:#fafafa;
+  cursor:pointer;
+  transition:background 0.15s;
+}
+.freq-card:active { background:#f0f4f8; }
+.freq-num { font-size:17px; font-weight:700; color:#1F4E79; min-width:68px; }
+.freq-info { flex:1; }
+.freq-station { font-size:13px; font-weight:600; color:#333; }
+.freq-sub { font-size:11px; color:#888; margin-top:1px; }
+.svc-dot {
+  width:32px; height:24px; border-radius:6px;
+  display:flex; align-items:center; justify-content:center;
+  font-size:9px; font-weight:700; color:white; flex-shrink:0;
+}
+.status-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+
+/* Station popup custom */
+.stn-popup { min-width:200px; }
+.stn-popup h3 { font-size:15px; font-weight:700; color:#1F4E79; margin-bottom:8px; border-bottom:1px solid #eee; padding-bottom:6px; }
+.stn-popup .freq-row {
+  display:flex; align-items:center; gap:6px;
+  padding:4px 0; border-bottom:1px solid #f5f5f5;
+  font-size:12px;
+}
+.stn-popup .freq-row:last-child { border-bottom:none; }
+.stn-popup .fhz { font-weight:700; color:#333; min-width:58px; }
+.stn-popup .fsvc {
+  padding:2px 6px; border-radius:4px;
+  font-size:10px; font-weight:700; color:white;
+}
+.stn-popup .fcat { color:#888; font-size:10px; }
+.stn-popup .fdim { opacity:0.4; }
+
+/* Legend */
+#legend {
+  position:fixed; bottom:16px; right:12px; z-index:999;
+  background:white; border-radius:12px;
+  padding:10px 12px;
+  box-shadow:0 2px 10px rgba(0,0,0,0.12);
+  font-size:11px; max-width:130px;
+}
+#legend h4 { font-size:10px; color:#888; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:7px; }
+.leg-row { display:flex; align-items:center; gap:6px; margin-bottom:4px; }
+.leg-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+
+/* No result toast */
+#toast {
+  position:fixed; top:80px; left:50%; transform:translateX(-50%);
+  background:rgba(30,30,30,0.85); color:white;
+  padding:8px 18px; border-radius:20px; font-size:13px;
+  z-index:2000; opacity:0; transition:opacity 0.3s;
+  pointer-events:none; white-space:nowrap;
+}
+#toast.show { opacity:1; }
+
+.leaflet-popup-content-wrapper { border-radius:12px!important; }
+.leaflet-popup-content { margin:12px 14px!important; }
+</style>
+</head>
+<body>
+
+<div id="panel">
+  <h1>🛩 Thailand VHF Frequency Map</h1>
+  <div class="search-row">
+    <input id="inp" type="number" inputmode="decimal" placeholder="121.500"
+           step="0.025" min="118" max="137" autocomplete="off">
+    <button id="search-btn" onclick="doSearch()">ค้นหา</button>
+    <button id="clear-btn" onclick="clearSearch()">✕</button>
+  </div>
+</div>
+
+<div id="map"></div>
+<div id="toast"></div>
+
+<div id="banner">
+  <div id="banner-handle" onclick="closeBanner()"><span></span></div>
+  <div id="banner-content">
+    <div class="banner-title" id="banner-title"></div>
+    <div id="banner-list"></div>
+  </div>
+</div>
+
+<div id="legend">
+  <h4>หมุดสถานี</h4>
+  <div class="leg-row"><div class="leg-dot" style="background:#2E75B6"></div> ICAO</div>
+  <div class="leg-row"><div class="leg-dot" style="background:#70AD47"></div> NAT</div>
+  <div class="leg-row"><div class="leg-dot" style="background:#FF6600"></div> ICAO+NAT</div>
+  <div class="leg-row"><div class="leg-dot" style="background:#aaa"></div> Out of use</div>
+</div>
+
+<script>
+const STATIONS = {"BURIRAM": {"lat": 15.228611, "lon": 103.248333, "freqs": [{"freq": 118.05, "svc": "TWR", "cat": "ICAO", "states": "In use"}, {"freq": 118.45, "svc": "FIS-L", "cat": "ICAO", "states": "In use"}, {"freq": 119.05, "svc": "FIS-L", "cat": "ICAO", "states": "In use"}, {"freq": 125.55, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 127.05, "svc": "ATIS", "cat": "ICAO", "states": "In use"}, {"freq": 133.1, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}]}, "PHUKET": {"lat": 8.110278, "lon": 98.323056, "freqs": [{"freq": 133.9, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 120.7, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 124.7, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 120.05, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 121.9, "svc": "AS", "cat": "ICAO", "states": "In use"}, {"freq": 118.55, "svc": "AS", "cat": "ICAO", "states": "In use"}, {"freq": 121.6, "svc": "AS", "cat": "ICAO", "states": "In use"}, {"freq": 128.0, "svc": "ATIS", "cat": "ICAO", "states": "In use"}, {"freq": 118.1, "svc": "TWR", "cat": "ICAO", "states": "In use"}]}, "CHIANG MAI": {"lat": 18.771389, "lon": 98.966389, "freqs": [{"freq": 124.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 129.6, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 121.6, "svc": "AS", "cat": "ICAO", "states": "In use"}, {"freq": 121.65, "svc": "AS", "cat": "ICAO", "states": "In use"}, {"freq": 121.9, "svc": "AS", "cat": "ICAO", "states": "In use"}, {"freq": 127.425, "svc": "ATIS", "cat": "ICAO", "states": "In use"}, {"freq": 118.1, "svc": "TWR", "cat": "ICAO", "states": "In use"}]}, "DON MUEANG": {"lat": 13.910833, "lon": 100.597778, "freqs": [{"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 121.9, "svc": "AS", "cat": "ICAO", "states": "In use"}, {"freq": 122.5, "svc": "AS", "cat": "ICAO", "states": "In use"}, {"freq": 127.7, "svc": "AS", "cat": "ICAO", "states": "In use"}, {"freq": 121.6, "svc": "AS", "cat": "ICAO", "states": "In use"}, {"freq": 118.55, "svc": "ATIS", "cat": "ICAO", "states": "In use"}, {"freq": 126.4, "svc": "ATIS", "cat": "ICAO", "states": "In use"}, {"freq": 118.1, "svc": "TWR", "cat": "ICAO", "states": "In use"}, {"freq": 122.75, "svc": "TWR", "cat": "ICAO", "states": "In use"}, {"freq": 133.3, "svc": "TWR", "cat": "ICAO", "states": "In use"}]}, "SONGKHLA / HAT YAI": {"lat": 6.929444, "lon": 100.398611, "freqs": [{"freq": 123.95, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 126.7, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 133.2, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 125.3, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 125.55, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 121.9, "svc": "AS", "cat": "ICAO", "states": "In use"}, {"freq": 121.6, "svc": "AS", "cat": "ICAO", "states": "In use"}, {"freq": 128.8, "svc": "ATIS", "cat": "ICAO", "states": "In use"}, {"freq": 118.1, "svc": "TWR", "cat": "ICAO", "states": "In use"}]}, "SUVARNABHUMI": {"lat": 13.696389, "lon": 100.749444, "freqs": [{"freq": 120.5, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 120.95, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 128.1, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 133.1, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 135.5, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 119.1, "svc": "APP-I", "cat": "ICAO", "states": "In use"}, {"freq": 119.25, "svc": "APP-I", "cat": "ICAO", "states": "In use"}, {"freq": 122.55, "svc": "APP-I", "cat": "ICAO", "states": "In use"}, {"freq": 119.4, "svc": "APP-I", "cat": "ICAO", "states": "In use"}, {"freq": 122.35, "svc": "APP-I", "cat": "ICAO", "states": "In use"}, {"freq": 121.75, "svc": "AS", "cat": "ICAO", "states": "In use"}, {"freq": 124.35, "svc": "APP-I", "cat": "ICAO", "states": "In use"}, {"freq": 125.2, "svc": "APP-I", "cat": "ICAO", "states": "In use"}, {"freq": 125.8, "svc": "APP-I", "cat": "ICAO", "states": "In use"}, {"freq": 126.3, "svc": "APP-I", "cat": "ICAO", "states": "In use"}, {"freq": 120.3, "svc": "APP-I", "cat": "ICAO", "states": "In use"}, {"freq": 121.1, "svc": "APP-I", "cat": "ICAO", "states": "In use"}, {"freq": 120.85, "svc": "APP-I", "cat": "ICAO", "states": "In use"}, {"freq": 121.4, "svc": "APP-I", "cat": "ICAO", "states": "In use"}, {"freq": 121.45, "svc": "APP-I", "cat": "ICAO", "states": "In use"}, {"freq": 122.75, "svc": "APP-I", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-I", "cat": "NAT", "states": "In use"}, {"freq": 133.0, "svc": "APP-I", "cat": "ICAO", "states": "In use"}, {"freq": 133.4, "svc": "APP-I", "cat": "ICAO", "states": "In use"}, {"freq": 134.35, "svc": "APP-I", "cat": "NAT", "states": "In use"}, {"freq": 120.8, "svc": "AS", "cat": "ICAO", "states": "Out of use"}, {"freq": 128.7, "svc": "AS", "cat": "ICAO", "states": "In use"}, {"freq": 133.8, "svc": "AS", "cat": "ICAO", "states": "In use"}, {"freq": 135.8, "svc": "AS", "cat": "ICAO", "states": "In use"}, {"freq": 121.7, "svc": "AS", "cat": "ICAO", "states": "In use"}, {"freq": 121.65, "svc": "AS", "cat": "ICAO", "states": "In use"}, {"freq": 121.95, "svc": "AS", "cat": "ICAO", "states": "In use"}, {"freq": 121.6, "svc": "AS", "cat": "ICAO", "states": "In use"}, {"freq": 127.65, "svc": "ATIS", "cat": "ICAO", "states": "In use"}, {"freq": 133.6, "svc": "ATIS", "cat": "ICAO", "states": "In use"}, {"freq": 118.2, "svc": "TWR", "cat": "ICAO", "states": "In use"}, {"freq": 119.0, "svc": "TWR", "cat": "ICAO", "states": "In use"}, {"freq": 118.4, "svc": "TWR", "cat": "ICAO", "states": "In use"}, {"freq": 118.7, "svc": "TWR", "cat": "ICAO", "states": "In use"}]}, "U-TAPAO": {"lat": 12.679722, "lon": 101.005, "freqs": [{"freq": 118.3, "svc": "TWR", "cat": "ICAO", "states": "In use"}, {"freq": 119.7, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 121.9, "svc": "AS", "cat": "ICAO", "states": "In use"}, {"freq": 127.2, "svc": "ATIS", "cat": "ICAO", "states": "In use"}, {"freq": 134.5, "svc": "APP-L", "cat": "ICAO", "states": "In use"}]}, "MAE SOT": {"lat": 16.701944, "lon": 98.543333, "freqs": [{"freq": 118.35, "svc": "TWR", "cat": "ICAO", "states": "In use"}, {"freq": 120.65, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 126.65, "svc": "ATIS", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}]}, "LOEI": {"lat": 17.438889, "lon": 101.7275, "freqs": [{"freq": 118.35, "svc": "TWR", "cat": "ICAO", "states": "In use"}, {"freq": 122.55, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 126.25, "svc": "ATIS", "cat": "ICAO", "states": "In use"}, {"freq": 126.5, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}]}, "CHIANG RAI": {"lat": 19.948889, "lon": 99.876111, "freqs": [{"freq": 120.05, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 121.6, "svc": "AS", "cat": "ICAO", "states": "In use"}, {"freq": 121.9, "svc": "AS", "cat": "ICAO", "states": "In use"}, {"freq": 127.85, "svc": "ATIS", "cat": "ICAO", "states": "In use"}, {"freq": 118.4, "svc": "TWR", "cat": "ICAO", "states": "In use"}]}, "TRANG": {"lat": 7.511667, "lon": 99.621667, "freqs": [{"freq": 118.4, "svc": "TWR", "cat": "ICAO", "states": "In use"}, {"freq": 118.65, "svc": "FIS-L", "cat": "ICAO", "states": "In use"}, {"freq": 125.3, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 134.5, "svc": "ATIS", "cat": "ICAO", "states": "In use"}, {"freq": 118.85, "svc": "FIS-L", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}]}, "BKK RCAG KANCHANABURI": {"lat": 15.073056, "lon": 98.610556, "freqs": [{"freq": 118.45, "svc": "FIS-L", "cat": "ICAO", "states": "In use"}, {"freq": 119.05, "svc": "FIS-L", "cat": "ICAO", "states": "In use"}, {"freq": 120.95, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}]}, "BKK RCAG TAK": {"lat": 16.898333, "lon": 99.253333, "freqs": [{"freq": 118.45, "svc": "FIS-L", "cat": "ICAO", "states": "In use"}, {"freq": 119.05, "svc": "FIS-L", "cat": "ICAO", "states": "In use"}]}, "BKK RCAG DSI": {"lat": 17.235278, "lon": 101.186944, "freqs": [{"freq": 118.45, "svc": "FIS-L", "cat": "ICAO", "states": "In use"}, {"freq": 119.05, "svc": "FIS-L", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}]}, "BKK RCAG CHIANG KAM": {"lat": 19.5275, "lon": 100.309722, "freqs": [{"freq": 118.45, "svc": "FIS-L", "cat": "ICAO", "states": "In use"}, {"freq": 119.05, "svc": "FIS-L", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}]}, "NAN": {"lat": 18.805, "lon": 100.785556, "freqs": [{"freq": 118.45, "svc": "FIS-L", "cat": "ICAO", "states": "In use"}, {"freq": 118.55, "svc": "TWR", "cat": "ICAO", "states": "In use"}, {"freq": 119.05, "svc": "FIS-L", "cat": "ICAO", "states": "In use"}, {"freq": 120.25, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 128.05, "svc": "ATIS", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}]}, "PHRAE": {"lat": 18.131111, "lon": 100.162222, "freqs": [{"freq": 118.6, "svc": "TWR", "cat": "ICAO", "states": "In use"}, {"freq": 120.1, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 126.45, "svc": "ATIS", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}]}, "BKK RCAG PHUKET": {"lat": 8.133611, "lon": 98.329444, "freqs": [{"freq": 118.65, "svc": "FIS-L", "cat": "ICAO", "states": "In use"}, {"freq": 118.85, "svc": "FIS-L", "cat": "ICAO", "states": "In use"}, {"freq": 125.7, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 133.9, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 119.175, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 120.275, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 124.7, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 126.575, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}]}, "BKK RCAG SAMUI": {"lat": 9.491944, "lon": 99.987778, "freqs": [{"freq": 118.65, "svc": "FIS-L", "cat": "ICAO", "states": "In use"}, {"freq": 118.85, "svc": "FIS-L", "cat": "ICAO", "states": "In use"}, {"freq": 119.75, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 125.7, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 118.35, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 123.95, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 129.6, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}]}, "BKK RCAG KHAO MON": {"lat": 12.688611, "lon": 100.920556, "freqs": [{"freq": 118.65, "svc": "FIS-L", "cat": "ICAO", "states": "In use"}, {"freq": 118.85, "svc": "FIS-L", "cat": "ICAO", "states": "In use"}, {"freq": 119.325, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 120.5, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 128.725, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 135.5, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}]}, "NARATHIWAT": {"lat": 6.521667, "lon": 101.747222, "freqs": [{"freq": 118.65, "svc": "FIS-L", "cat": "ICAO", "states": "In use"}, {"freq": 118.85, "svc": "FIS-L", "cat": "ICAO", "states": "In use"}, {"freq": 121.9, "svc": "AS", "cat": "ICAO", "states": "In use"}, {"freq": 122.7, "svc": "TWR", "cat": "ICAO", "states": "In use"}, {"freq": 125.55, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 127.425, "svc": "ATIS", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}]}, "PHITSANULOK": {"lat": 16.782222, "lon": 100.282778, "freqs": [{"freq": 118.9, "svc": "TWR", "cat": "ICAO", "states": "In use"}, {"freq": 120.7, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 121.9, "svc": "AS", "cat": "ICAO", "states": "In use"}, {"freq": 127.4, "svc": "ATIS", "cat": "ICAO", "states": "In use"}, {"freq": 128.1, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 124.5, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 126.5, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}]}, "SAMUI": {"lat": 9.551944, "lon": 100.060556, "freqs": [{"freq": 118.9, "svc": "TWR", "cat": "ICAO", "states": "In use"}, {"freq": 121.9, "svc": "AS", "cat": "ICAO", "states": "In use"}, {"freq": 128.6, "svc": "ATIS", "cat": "ICAO", "states": "In use"}, {"freq": 129.6, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}]}, "BKK RCAG PAI": {"lat": 19.2675, "lon": 98.583778, "freqs": [{"freq": 119.05, "svc": "FIS-L", "cat": "ICAO", "states": "In use"}, {"freq": 118.45, "svc": "FIS-L", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}]}, "LAMPANG": {"lat": 18.276111, "lon": 99.505833, "freqs": [{"freq": 119.3, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 122.3, "svc": "TWR", "cat": "ICAO", "states": "In use"}, {"freq": 128.65, "svc": "ATIS", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}]}, "PATTANI": {"lat": 6.787222, "lon": 101.147222, "freqs": [{"freq": 119.3, "svc": "TWR", "cat": "ICAO", "states": "In use"}, {"freq": 122.7, "svc": "APP-L", "cat": "ICAO", "states": "Out of use"}, {"freq": 126.0, "svc": "APP-L", "cat": "ICAO", "states": "In use"}]}, "BANGKOK": {"lat": 13.716389, "lon": 100.542778, "freqs": [{"freq": 119.325, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 120.95, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 126.125, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 128.725, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 131.1, "svc": "AOC", "cat": "NAT", "states": "In use"}, {"freq": 131.15, "svc": "AOC", "cat": "NAT", "states": "In use"}, {"freq": 131.2, "svc": "AOC", "cat": "NAT", "states": "In use"}, {"freq": 131.25, "svc": "AOC", "cat": "NAT", "states": "In use"}, {"freq": 131.3, "svc": "AOC", "cat": "NAT", "states": "In use"}, {"freq": 131.35, "svc": "AOC", "cat": "NAT", "states": "In use"}, {"freq": 131.4, "svc": "AOC", "cat": "NAT", "states": "In use"}, {"freq": 131.45, "svc": "VDL", "cat": "NAT", "states": "In use"}, {"freq": 131.5, "svc": "AOC", "cat": "NAT", "states": "In use"}, {"freq": 131.55, "svc": "AOC", "cat": "NAT", "states": "In use"}, {"freq": 131.6, "svc": "AOC", "cat": "NAT", "states": "In use"}, {"freq": 131.65, "svc": "AOC", "cat": "NAT", "states": "In use"}, {"freq": 131.7, "svc": "AOC", "cat": "NAT", "states": "In use"}, {"freq": 131.75, "svc": "AOC", "cat": "NAT", "states": "In use"}, {"freq": 131.8, "svc": "AOC", "cat": "NAT", "states": "In use"}, {"freq": 131.85, "svc": "AOC", "cat": "NAT", "states": "In use"}, {"freq": 131.9, "svc": "AOC", "cat": "NAT", "states": "In use"}, {"freq": 131.95, "svc": "AOC", "cat": "NAT", "states": "In use"}, {"freq": 133.975, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 120.5, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 122.75, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 128.1, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 133.1, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 133.35, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 133.85, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 135.5, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}]}, "UDON THANI": {"lat": 17.386111, "lon": 102.7775, "freqs": [{"freq": 119.45, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 121.9, "svc": "AS", "cat": "ICAO", "states": "In use"}, {"freq": 122.5, "svc": "TWR", "cat": "ICAO", "states": "In use"}, {"freq": 126.2, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 126.5, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 127.6, "svc": "ATIS", "cat": "ICAO", "states": "In use"}, {"freq": 124.5, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}]}, "SAKOL NAKHON": {"lat": 17.196667, "lon": 104.115833, "freqs": [{"freq": 119.65, "svc": "TWR", "cat": "ICAO", "states": "In use"}, {"freq": 123.35, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 128.25, "svc": "ATIS", "cat": "ICAO", "states": "In use"}, {"freq": 121.9, "svc": "AS", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}]}, "NAKORN SI THAMMARAT": {"lat": 8.541111, "lon": 99.940833, "freqs": [{"freq": 119.75, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 121.9, "svc": "AS", "cat": "ICAO", "states": "In use"}, {"freq": 122.55, "svc": "TWR", "cat": "ICAO", "states": "In use"}, {"freq": 123.4, "svc": "ATIS", "cat": "ICAO", "states": "In use"}, {"freq": 123.95, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}]}, "ROI ET": {"lat": 16.118333, "lon": 103.778056, "freqs": [{"freq": 119.75, "svc": "TWR", "cat": "ICAO", "states": "In use"}, {"freq": 125.4, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 128.275, "svc": "ATIS", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 132.1, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}]}, "NAKHON RATCHASIMA": {"lat": 14.952778, "lon": 102.310278, "freqs": [{"freq": 119.8, "svc": "TWR", "cat": "ICAO", "states": "In use"}, {"freq": 123.6, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 126.6, "svc": "ATIS", "cat": "ICAO", "states": "In use"}, {"freq": 133.1, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 133.975, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 121.9, "svc": "AS", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}]}, "UBON RATCHATHANI": {"lat": 15.246111, "lon": 104.869167, "freqs": [{"freq": 119.9, "svc": "TWR", "cat": "ICAO", "states": "In use"}, {"freq": 121.9, "svc": "AS", "cat": "ICAO", "states": "In use"}, {"freq": 123.5, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 125.75, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 128.2, "svc": "ATIS", "cat": "ICAO", "states": "In use"}, {"freq": 133.1, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 132.1, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}]}, "KRABI": {"lat": 8.096389, "lon": 98.983056, "freqs": [{"freq": 120.05, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 121.9, "svc": "AS", "cat": "ICAO", "states": "In use"}, {"freq": 122.5, "svc": "TWR", "cat": "ICAO", "states": "In use"}, {"freq": 132.4, "svc": "ATIS", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 125.525, "svc": "APP-L", "cat": "ICAO", "states": "In use"}]}, "TRAT": {"lat": 12.276667, "lon": 102.319167, "freqs": [{"freq": 120.25, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 122.9, "svc": "TWR", "cat": "ICAO", "states": "In use"}, {"freq": 135.5, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}]}, "PRACHUAP KHIRI KHAN / HUA HIN": {"lat": 12.631667, "lon": 99.950833, "freqs": [{"freq": 120.5, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 121.9, "svc": "AS", "cat": "ICAO", "states": "In use"}, {"freq": 122.7, "svc": "TWR", "cat": "ICAO", "states": "In use"}, {"freq": 126.2, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 126.8, "svc": "ATIS", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}]}, "WATTHANA NAKHON": {"lat": 13.768889, "lon": 102.315556, "freqs": [{"freq": 120.75, "svc": "TWR", "cat": "NAT", "states": "In use"}]}, "BKK RCAG Sangkraburi": {"lat": 15.052222, "lon": 98.599444, "freqs": [{"freq": 120.95, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}]}, "PRACHUAP KHIRIKHAN": {"lat": 11.788333, "lon": 99.804722, "freqs": [{"freq": 121.75, "svc": "AS", "cat": "NAT", "states": "In use"}, {"freq": 135.9, "svc": "TWR", "cat": "NAT", "states": "In use"}]}, "NAKHON PATHOM / KAMPHAENG SAEN": {"lat": 14.101944, "lon": 99.917222, "freqs": [{"freq": 121.75, "svc": "AS", "cat": "NAT", "states": "In use"}, {"freq": 123.3, "svc": "TWR", "cat": "NAT", "states": "In use"}, {"freq": 127.75, "svc": "APP-L", "cat": "NAT", "states": "In use"}]}, "NAKHON SAWAN / TAKHLI": {"lat": 15.277222, "lon": 100.295833, "freqs": [{"freq": 121.75, "svc": "AS", "cat": "NAT", "states": "In use"}, {"freq": 124.0, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 133.25, "svc": "TWR", "cat": "NAT", "states": "In use"}, {"freq": 134.1, "svc": "APP-L", "cat": "NAT", "states": "In use"}]}, "LOP BURI / KHOK KATHIAM": {"lat": 14.874722, "lon": 100.663333, "freqs": [{"freq": 121.75, "svc": "AS", "cat": "NAT", "states": "In use"}, {"freq": 122.6, "svc": "TWR", "cat": "NAT", "states": "In use"}]}, "NAKHON RATCHASIMA / KHORAT": {"lat": 14.934444, "lon": 102.078611, "freqs": [{"freq": 121.75, "svc": "AS", "cat": "NAT", "states": "In use"}, {"freq": 122.2, "svc": "TWR", "cat": "NAT", "states": "In use"}, {"freq": 129.75, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.8, "svc": "ATIS", "cat": "NAT", "states": "In use"}]}, "SURATTHANI": {"lat": 9.132778, "lon": 99.141389, "freqs": [{"freq": 121.9, "svc": "AS", "cat": "ICAO", "states": "In use"}, {"freq": 122.7, "svc": "TWR", "cat": "ICAO", "states": "In use"}, {"freq": 123.35, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 125.95, "svc": "ATIS", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}]}, "KHON KAEN": {"lat": 16.463056, "lon": 102.784444, "freqs": [{"freq": 121.9, "svc": "AS", "cat": "ICAO", "states": "In use"}, {"freq": 122.25, "svc": "TWR", "cat": "ICAO", "states": "In use"}, {"freq": 123.4, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 126.85, "svc": "ATIS", "cat": "ICAO", "states": "In use"}, {"freq": 132.1, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}]}, "NAKHON PHANOM": {"lat": 17.3875, "lon": 104.645278, "freqs": [{"freq": 121.9, "svc": "AS", "cat": "ICAO", "states": "In use"}, {"freq": 122.15, "svc": "TWR", "cat": "ICAO", "states": "In use"}, {"freq": 128.85, "svc": "ATIS", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}]}, "NAKHON SI THAMMARAT / CHA - IAN AIRPORT": {"lat": 8.463889, "lon": 99.958333, "freqs": [{"freq": 121.9, "svc": "AS", "cat": "NAT", "states": "In use"}, {"freq": 122.7, "svc": "TWR", "cat": "NAT", "states": "In use"}]}, "LOP BURI / SRAPHAN NAK": {"lat": 14.95, "lon": 100.633333, "freqs": [{"freq": 122.1, "svc": "TWR", "cat": "ICAO", "states": "In use"}]}, "BETONG": {"lat": 5.786944, "lon": 101.148889, "freqs": [{"freq": 122.15, "svc": "AS", "cat": "ICAO", "states": "In use"}, {"freq": 124.15, "svc": "TWR", "cat": "ICAO", "states": "In use"}, {"freq": 126.95, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 128.5, "svc": "ATIS", "cat": "ICAO", "states": "In use"}, {"freq": 125.55, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}]}, "CHUMPHON": {"lat": 10.715, "lon": 99.359722, "freqs": [{"freq": 122.15, "svc": "TWR", "cat": "ICAO", "states": "In use"}, {"freq": 122.6, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 123.95, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 125.7, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 128.45, "svc": "ATIS", "cat": "ICAO", "states": "In use"}, {"freq": 118.35, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 121.9, "svc": "AS", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}]}, "RANONG": {"lat": 9.775, "lon": 98.587778, "freqs": [{"freq": 122.25, "svc": "TWR", "cat": "ICAO", "states": "In use"}, {"freq": 125.1, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 126.475, "svc": "ATIS", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}]}, "NAKHON SAWAN": {"lat": 15.6725, "lon": 100.136111, "freqs": [{"freq": 122.3, "svc": "TWR", "cat": "ICAO", "states": "In use"}, {"freq": 122.8, "svc": "TWR", "cat": "ICAO", "states": "In use"}]}, "MAE HONG SON": {"lat": 19.301667, "lon": 97.975, "freqs": [{"freq": 122.3, "svc": "TWR", "cat": "ICAO", "states": "In use"}, {"freq": 126.2, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 127.45, "svc": "ATIS", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}]}, "PHETCHABUN": {"lat": 16.674167, "lon": 101.190833, "freqs": [{"freq": 122.3, "svc": "TWR", "cat": "ICAO", "states": "In use"}, {"freq": 126.7, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 127.075, "svc": "ATIS", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}]}, "SURINPAKDEE": {"lat": 14.868333, "lon": 103.498333, "freqs": [{"freq": 122.7, "svc": "TWR", "cat": "ICAO", "states": "In use"}]}, "BKK RCAG LAMPANG": {"lat": 18.243333, "lon": 99.562778, "freqs": [{"freq": 124.5, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}]}, "BKK RCAG NAKHONSAWAN": {"lat": 15.711944, "lon": 100.110278, "freqs": [{"freq": 126.125, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 128.1, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}]}, "SONGKHLA AIRPORT": {"lat": 7.185833, "lon": 100.608889, "freqs": [{"freq": 126.2, "svc": "TWR", "cat": "NAT", "states": "In use"}]}, "BKK RCAG KHON KAEN": {"lat": 16.463333, "lon": 102.784722, "freqs": [{"freq": 128.1, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 133.1, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}]}, "SUKHOTHAI": {"lat": 17.237778, "lon": 99.819722, "freqs": [{"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 122.9, "svc": "TWR", "cat": "ICAO", "states": "In use"}]}, "BKK RCAG INTHANON": {"lat": 18.59, "lon": 98.486944, "freqs": [{"freq": 124.5, "svc": "ACC-U", "cat": "ICAO", "states": "In use"}, {"freq": 129.6, "svc": "APP-L", "cat": "ICAO", "states": "In use"}, {"freq": 132.05, "svc": "APP-L", "cat": "NAT", "states": "In use"}, {"freq": 134.35, "svc": "APP-L", "cat": "NAT", "states": "In use"}]}};
+const SVC_COLORS = {"TWR": "#2E75B6", "ACC-U": "#1F4E79", "ACC-I": "#003366", "ACC": "#5B9BD5", "APP-U": "#9DC3E6", "APP-L": "#00B0F0", "APP": "#BDD7EE", "APP-I": "#4472C4", "ATIS": "#FF6600", "AS": "#70AD47", "FIS-L": "#A9D18E", "AOC": "#7030A0", "SMC": "#FFD700", "VDL": "#FF69B4"};
+const SVC_DESC = {"TWR": "Tower / หอควบคุม", "ACC-U": "Area Control Upper", "ACC-I": "Area Control Inter", "ACC": "Area Control", "APP-U": "Approach Upper", "APP-L": "Approach Lower", "APP": "Approach", "APP-I": "Approach (Integrated)", "ATIS": "Auto Terminal Info", "AS": "Air-to-Air / Special", "FIS-L": "Flight Info Lower", "AOC": "Airline Ops Center", "SMC": "Surface Movement", "VDL": "VHF Data Link"};
+
+// Build freq → [station] lookup
+const FREQ_MAP = {};
+for (const [name, st] of Object.entries(STATIONS)) {
+  for (const f of st.freqs) {
+    const key = f.freq.toFixed(3);
+    if (!FREQ_MAP[key]) FREQ_MAP[key] = [];
+    FREQ_MAP[key].push({name, ...f});
+  }
+}
+
+// Map
+const map = L.map('map', {
+  center: [13.5, 101.0], zoom: 6,
+  zoomControl: false,
+});
+L.control.zoom({position:'topright'}).addTo(map);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution:'© OpenStreetMap',
+  maxZoom:18,
+}).addTo(map);
+
+// Icons
+function makeIcon(color, size=14) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="32" viewBox="0 0 24 32">
+    <path d="M12 0C5.4 0 0 5.4 0 12c0 7.2 12 20 12 20S24 19.2 24 12C24 5.4 18.6 0 12 0z" fill="${color}" stroke="white" stroke-width="1.5"/>
+    <circle cx="12" cy="12" r="5" fill="white" opacity="0.8"/>
+  </svg>`;
+  return L.divIcon({
+    html: svg, className:'', iconSize:[24,32], iconAnchor:[12,32], popupAnchor:[0,-34]
+  });
+}
+
+function stationColor(st) {
+  const cats = new Set(st.freqs.map(f=>f.cat).filter(Boolean));
+  const hasInUse = st.freqs.some(f=>f.states==='In use');
+  if (!hasInUse) return '#aaa';
+  if (cats.has('ICAO') && cats.has('NAT')) return '#FF6600';
+  if (cats.has('ICAO')) return '#2E75B6';
+  if (cats.has('NAT')) return '#70AD47';
+  return '#999';
+}
+
+const markers = {};
+for (const [name, st] of Object.entries(STATIONS)) {
+  const color = stationColor(st);
+  const marker = L.marker([st.lat, st.lon], {icon: makeIcon(color)});
+  
+  // Popup content
+  const freqRows = st.freqs
+    .sort((a,b)=>a.freq-b.freq)
+    .map(f => {
+      const c = SVC_COLORS[f.svc] || '#999';
+      const dim = f.states !== 'In use' ? ' fdim':'';
+      return `<div class="freq-row${dim}">
+        <span class="fhz">${f.freq.toFixed(3)}</span>
+        <span class="fsvc" style="background:${c}">${f.svc||'—'}</span>
+        <span class="fcat">${f.cat}</span>
+      </div>`;
+    }).join('');
+
+  const popupHtml = `<div class="stn-popup">
+    <h3>📍 ${name}</h3>
+    ${freqRows}
+  </div>`;
+  
+  marker.bindPopup(popupHtml, {maxWidth:260});
+  marker.addTo(map);
+  markers[name] = marker;
+}
+
+// Highlight state
+let highlighted = [];
+let isFiltered = false;
+
+function clearHighlight() {
+  // Show all markers again with original colors
+  for (const [name, st] of Object.entries(STATIONS)) {
+    if (markers[name]) {
+      markers[name].setIcon(makeIcon(stationColor(st)));
+      if (!map.hasLayer(markers[name])) markers[name].addTo(map);
+    }
+  }
+  highlighted = [];
+  isFiltered = false;
+  closeBanner();
+}
+
+function highlightStation(name) {
+  if (markers[name]) {
+    markers[name].setIcon(makeIcon('#FFD700', 18));
+    highlighted.push(name);
+  }
+}
+
+function filterToStations(stNames) {
+  // Hide all markers not in the list
+  for (const [name] of Object.entries(STATIONS)) {
+    if (!markers[name]) continue;
+    if (stNames.includes(name)) {
+      if (!map.hasLayer(markers[name])) markers[name].addTo(map);
+      markers[name].setIcon(makeIcon('#FFD700', 18));
+    } else {
+      if (map.hasLayer(markers[name])) map.removeLayer(markers[name]);
+    }
+  }
+  isFiltered = true;
+}
+
+// Search
+function doSearch() {
+  const raw = document.getElementById('inp').value.trim();
+  clearHighlight();
+  if (!raw) return;
+  const q = parseFloat(raw);
+  if (isNaN(q)) { showToast('ใส่ตัวเลขความถี่'); return; }
+
+  // exact ±0.001
+  let results = [];
+  for (const [key, entries] of Object.entries(FREQ_MAP)) {
+    if (Math.abs(parseFloat(key) - q) < 0.001) results.push(...entries);
+  }
+  // fuzzy ±0.013
+  if (!results.length) {
+    for (const [key, entries] of Object.entries(FREQ_MAP)) {
+      if (Math.abs(parseFloat(key) - q) < 0.013) results.push(...entries);
+    }
+  }
+
+  if (!results.length) {
+    showToast(`ไม่พบ ${q} MHz`); return;
+  }
+
+  // sort by freq
+  results.sort((a,b)=>a.freq-b.freq);
+  const stNames = [...new Set(results.map(r=>r.name))];
+  filterToStations(stNames);
+
+  // fly to first
+  const first = STATIONS[stNames[0]];
+  if (stNames.length === 1) {
+    map.flyTo([first.lat, first.lon], 10, {duration:0.8});
+    setTimeout(() => markers[stNames[0]].openPopup(), 900);
+  } else {
+    const lats = stNames.map(n=>STATIONS[n].lat);
+    const lons = stNames.map(n=>STATIONS[n].lon);
+    map.flyToBounds([[Math.min(...lats),Math.min(...lons)],[Math.max(...lats),Math.max(...lons)]], {padding:[60,60],duration:0.8});
+  }
+
+  showBanner(q, results);
+}
+
+function showBanner(q, results) {
+  document.getElementById('banner-title').textContent = `ความถี่ ${q.toFixed(3)} MHz — ${results.length} รายการ`;
+  const list = results.map(r => {
+    const c  = SVC_COLORS[r.svc] || '#999';
+    const desc = SVC_DESC[r.svc] || r.svc;
+    const dot = r.states==='In use' ? '#70AD47':'#ccc';
+    return `<div class="freq-card" onclick="flyTo('${r.name}')">
+      <div class="freq-num">${r.freq.toFixed(3)}</div>
+      <div class="freq-info">
+        <div class="freq-station">${r.name}</div>
+        <div class="freq-sub">${desc} · ${r.cat}</div>
+      </div>
+      <div class="svc-dot" style="background:${c}">${r.svc}</div>
+      <div class="status-dot" style="background:${dot}"></div>
+    </div>`;
+  }).join('');
+  document.getElementById('banner-list').innerHTML = list;
+  document.getElementById('banner').classList.add('open');
+}
+
+function closeBanner() {
+  document.getElementById('banner').classList.remove('open');
+}
+
+function flyTo(name) {
+  const st = STATIONS[name];
+  if (!st) return;
+  map.flyTo([st.lat,st.lon],11,{duration:0.6});
+  setTimeout(()=>markers[name].openPopup(),700);
+}
+
+function clearSearch() {
+  document.getElementById('inp').value='';
+  clearHighlight();
+}
+
+function showToast(msg) {
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2500);
+}
+
+// close banner on map tap
+map.on('click',()=>{
+  if(document.getElementById('banner').classList.contains('open')) closeBanner();
+});
+
+document.getElementById('inp').addEventListener('keydown',e=>{
+  if(e.key==='Enter'){doSearch();e.target.blur();}
+});
+
+// Adjust map top for panel
+function adjustMap(){
+  const ph=document.getElementById('panel').offsetHeight;
+  document.getElementById('map').style.paddingTop=ph+'px';
+  map.invalidateSize();
+}
+adjustMap();
+window.addEventListener('resize',adjustMap);
+</script>
+</body>
+</html>
