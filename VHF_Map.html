@@ -64,7 +64,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;overflow
 <div id="panel">
   <h1>🛩 Thailand VHF Frequency Map</h1>
   <div class="search-row">
-    <input id="inp" type="number" inputmode="decimal" placeholder="121.500" step="0.025" min="118" max="137" autocomplete="off">
+    <input id="inp" type="number" inputmode="decimal" placeholder="121.500 / 99.25" step="0.025" min="88" max="137" autocomplete="off">
     <button id="search-btn" onclick="doSearch()">ค้นหา</button>
     <button id="clear-btn" onclick="clearSearch()">✕</button>
   </div>
@@ -96,6 +96,10 @@ function pinIcon(color){
 }
 function dotIcon(color,size){
   return L.divIcon({html:`<div style="background:${color};width:${size}px;height:${size}px;border-radius:50%;border:1.5px solid white;box-shadow:0 1px 3px rgba(0,0,0,0.4)"></div>`,className:'',iconSize:[size,size],iconAnchor:[size/2,size/2]});
+}
+function parseFMFreq(name){
+  const m=/^\d+\.\s*([\d.]+)\s+(.*)$/.exec(name);
+  return m?{freq:parseFloat(m[1]),label:m[2]}:{freq:NaN,label:name};
 }
 function stColor(st){
   const cats=new Set(st.freqs.map(f=>f.cat).filter(Boolean));
@@ -154,20 +158,32 @@ KML[3].data.forEach(poly=>{
 const SEV_A={'วิกฤต':{c:'#C0392B',s:12},'สูง':{c:'#E74C3C',s:10},'ปานกลาง':{c:'#E67E22',s:8},'เฝ้าระวัง':{c:'#F39C12',s:7},'ต่ำ':{c:'#F1C40F',s:6}};
 const SEV_B={'วิกฤต':{c:'#1E8449',s:12},'สูง':{c:'#27AE60',s:10},'ปานกลาง':{c:'#2ECC71',s:8},'เฝ้าระวัง':{c:'#58D68D',s:7},'ต่ำ':{c:'#82E0AA',s:6}};
 
+const fmMarkers=[];
 const fmAGroup=L.layerGroup().addTo(map);
 KML[4].data.forEach(pt=>{
   const sv=SEV_A[pt.style]||{c:'#999',s:6};
-  L.marker(pt.latlng,{icon:dotIcon(sv.c,sv.s)})
+  const mk=L.marker(pt.latlng,{icon:dotIcon(sv.c,sv.s)})
    .bindPopup(`<div class="kml-popup"><b>📻 ${pt.name}</b><br>${pt.desc}</div>`)
    .addTo(fmAGroup);
+  const fm=parseFMFreq(pt.name);
+  fmMarkers.push({marker:mk,group:fmAGroup,freq:fm.freq,label:fm.label,style:pt.style,baseColor:sv.c,baseSize:sv.s,cat:'4A'});
 });
 
 const fmBGroup=L.layerGroup().addTo(map);
 KML[5].data.forEach(pt=>{
   const sv=SEV_B[pt.style]||{c:'#999',s:6};
-  L.marker(pt.latlng,{icon:dotIcon(sv.c,sv.s)})
+  const mk=L.marker(pt.latlng,{icon:dotIcon(sv.c,sv.s)})
    .bindPopup(`<div class="kml-popup"><b>📻 ${pt.name}</b><br>${pt.desc}</div>`)
    .addTo(fmBGroup);
+  const fm=parseFMFreq(pt.name);
+  fmMarkers.push({marker:mk,group:fmBGroup,freq:fm.freq,label:fm.label,style:pt.style,baseColor:sv.c,baseSize:sv.s,cat:'4B'});
+});
+
+const FM_MAP={};
+fmMarkers.forEach(f=>{
+  if(isNaN(f.freq))return;
+  const key=f.freq.toFixed(3);
+  (FM_MAP[key]=FM_MAP[key]||[]).push(f);
 });
 
 // Layer toggle panel
@@ -211,9 +227,26 @@ function resetVHF(){
   }
   isFiltered=false; closeBanner();
 }
+let isFMFiltered=false;
+function filterToFM(res){
+  const matchSet=new Set(res.map(r=>r.marker));
+  fmMarkers.forEach(f=>{
+    if(matchSet.has(f.marker)){if(!f.group.hasLayer(f.marker))f.group.addLayer(f.marker);f.marker.setIcon(dotIcon('#FFD700',14));}
+    else f.group.removeLayer(f.marker);
+  });
+  isFMFiltered=true;
+}
+function resetFM(){
+  fmMarkers.forEach(f=>{
+    f.marker.setIcon(dotIcon(f.baseColor,f.baseSize));
+    if(!f.group.hasLayer(f.marker))f.group.addLayer(f.marker);
+  });
+  isFMFiltered=false;
+}
 function doSearch(){
-  const raw=document.getElementById('inp').value.trim(); resetVHF(); if(!raw)return;
+  const raw=document.getElementById('inp').value.trim(); resetVHF(); resetFM(); if(!raw)return;
   const q=parseFloat(raw); if(isNaN(q)){showToast('ใส่ตัวเลขความถี่');return;}
+  if(q>=88&&q<=108){doSearchFM(q);return;}
   let res=[];
   for(const [k,e] of Object.entries(FREQ_MAP)) if(Math.abs(parseFloat(k)-q)<0.001)res.push(...e);
   if(!res.length) for(const [k,e] of Object.entries(FREQ_MAP)) if(Math.abs(parseFloat(k)-q)<0.013)res.push(...e);
@@ -226,6 +259,18 @@ function doSearch(){
   else map.flyToBounds([[Math.min(...lats),Math.min(...lons)],[Math.max(...lats),Math.max(...lons)]],{padding:[60,60],duration:0.8});
   showBanner(q,res);
 }
+function doSearchFM(q){
+  let res=[];
+  for(const [k,e] of Object.entries(FM_MAP)) if(Math.abs(parseFloat(k)-q)<0.001)res.push(...e);
+  if(!res.length) for(const [k,e] of Object.entries(FM_MAP)) if(Math.abs(parseFloat(k)-q)<0.03)res.push(...e);
+  if(!res.length){showToast(`ไม่พบสถานี FM ${q} MHz`);return;}
+  res.sort((a,b)=>a.freq-b.freq);
+  filterToFM(res);
+  const pts=res.map(r=>r.marker.getLatLng());
+  if(pts.length===1){map.flyTo(pts[0],13,{duration:0.8});setTimeout(()=>res[0].marker.openPopup(),900);}
+  else map.flyToBounds(L.latLngBounds(pts),{padding:[60,60],duration:0.8});
+  showBannerFM(q,res);
+}
 function showBanner(q,res){
   document.getElementById('banner-title').textContent=`ความถี่ ${q.toFixed(3)} MHz — ${res.length} รายการ`;
   document.getElementById('banner-list').innerHTML=res.map(r=>{
@@ -234,9 +279,19 @@ function showBanner(q,res){
   }).join('');
   document.getElementById('banner').classList.add('open');
 }
+function showBannerFM(q,res){
+  window._fmBannerRes=res;
+  document.getElementById('banner-title').textContent=`FM ${q.toFixed(2)} MHz — ${res.length} สถานี`;
+  document.getElementById('banner-list').innerHTML=res.map((r,i)=>{
+    const c=r.cat==='4A'?'#E74C3C':'#27AE60'; const statusLabel=r.cat==='4A'?'ยังไม่ผ่านรายงาน':'ผ่านรายงานแล้ว';
+    return`<div class="freq-card" onclick="flyToFM(${i})"><div class="freq-num">${r.freq.toFixed(2)}</div><div class="freq-info"><div class="freq-station">${r.label}</div><div class="freq-sub">${statusLabel} · ${r.style}</div></div><div class="svc-dot" style="background:${c}">${r.cat}</div></div>`;
+  }).join('');
+  document.getElementById('banner').classList.add('open');
+}
 function closeBanner(){document.getElementById('banner').classList.remove('open');}
 function flyTo(name){const st=STATIONS[name];if(!st)return;map.flyTo([st.lat,st.lon],11,{duration:0.6});setTimeout(()=>markers[name].openPopup(),700);}
-function clearSearch(){document.getElementById('inp').value='';resetVHF();}
+function flyToFM(i){const r=window._fmBannerRes[i];map.flyTo(r.marker.getLatLng(),13,{duration:0.6});setTimeout(()=>r.marker.openPopup(),700);}
+function clearSearch(){document.getElementById('inp').value='';resetVHF();resetFM();closeBanner();}
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2500);}
 map.on('click',()=>{closeBanner();document.getElementById('layer-panel').classList.remove('open');});
 document.getElementById('inp').addEventListener('keydown',e=>{if(e.key==='Enter'){doSearch();e.target.blur();}});
